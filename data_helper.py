@@ -195,7 +195,7 @@ def load_data_modified_char(filename):
     list_data = []
     labels = []
     total = ""
-    actual_max_length = 70
+    actual_max_length = 90
     with open(filename, 'r', encoding="utf8") as tsv:
         for line in tsv:
             lineset = stopwordElimination(line)

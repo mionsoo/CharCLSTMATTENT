@@ -13,6 +13,7 @@ import tensorflow as tf
 from pandas import Series,DataFrame
 # from text_cnn_rnn import TextCNNRNN
 from char_cnn_biLstm2 import TextCNNRNN
+# from char_cnn_biLstm3 import TextCNNRNN
 from sklearn.model_selection import train_test_split
 
 
@@ -24,7 +25,7 @@ def train_cnn_rnn2(input_file):
 
     start_vect = time.time()
     # input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/yahoo_answers_csv/train50000_2.csv'
-    # input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/ag_news_csv/train_10P.csv'
+    input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/ag_news_csv/train_10P.csv'
     # input_file = '/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master/data/train.csv.zip'
     # input_file = sys.argv[1]
 
@@ -33,7 +34,7 @@ def train_cnn_rnn2(input_file):
 
     # x_, y_, vocabulary, vocabulary_inv, df, labels = data_helper.load_data(input_file)
 
-    training_config = '/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master/training_config.json'
+    training_config = './training_config.json'
     # training_config = sys.argv[2]
     params = json.loads(open(training_config).read())
 
@@ -67,8 +68,8 @@ def train_cnn_rnn2(input_file):
 
     graph = tf.Graph()
     with graph.as_default():
-        session_conf = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
-        sess = tf.Session(config=session_conf)
+        session_conf = tf.ConfigProto(allow_soft_placement=False, log_device_placement=False)
+        sess = tf.InteractiveSession(config=session_conf)
         with sess.as_default():
             cnn_rnn = TextCNNRNN(
                 embedding_mat=embedding_mat,
@@ -127,7 +128,6 @@ def train_cnn_rnn2(input_file):
                 # print("{} : {}".format("pad.shape", len(x_batch)))
                 # print("{} : {}".format("pad.shape", np.shape(np.zeros([len(x_batch), 1, params['embedding_dim'], 1]))))
                 # print("{} : {}".format("pad.shape", np.shape(real_len(x_batch))))
-
                 _, step, loss, accuracy, summaries = sess.run([train_op, global_step, cnn_rnn.loss, cnn_rnn.accuracy, train_summary_op], feed_dict)
 
                 if step % params['display_every'] == 0:
@@ -149,8 +149,6 @@ def train_cnn_rnn2(input_file):
 
                 loss, accuracy, num_correct, predictions,summaries = sess.run(
                     [cnn_rnn.loss, cnn_rnn.accuracy, cnn_rnn.num_correct, cnn_rnn.predictions,dev_summary_op], feed_dict)
-
-                # print("input : ",inputX)
 
                 return accuracy, loss, num_correct, predictions,summaries
 
@@ -176,7 +174,6 @@ def train_cnn_rnn2(input_file):
                         x_train_batch[batch_num] = x_train[m]
                         m += 1
                         if m >= len(x_train):
-                            print(m)
                             m = 0
                     step = train_step(x_train_batch, y_train_batch, writer=train_summary_writer)
 
@@ -197,21 +194,15 @@ def train_cnn_rnn2(input_file):
                         x_dev_batch[batch_num] = x_dev[q]
                         q += 1
                         if q >= len(x_dev):
-                            print(q)
                             q = 0
 
                     accuracy, loss, num_dev_correct, predictions, summaries= dev_step(x_dev_batch, y_dev_batch)
                     A_s += accuracy
                     total_dev_correct += num_dev_correct
                 dev_summary_writer.add_summary(summaries, current_step)
-
-                # accuracy = float(total_dev_correct) / len(y_dev)
-                # accuracy_list.append(accuracy)
-
                 return A_s/n_batch
 
             for epoch in range(params["num_epochs"]):
-                # current_step = tf.train.global_step(sess, global_step)
                 current_step = tf.train.global_step(sess,global_step)
 
                 training(x_train,y_train,y_train.shape[1])
@@ -225,16 +216,6 @@ def train_cnn_rnn2(input_file):
                     print('Saved model {} at step {}'.format(path, current_step))
 
                     print('Best accuracy {} at step {}'.format(best_accuracy, best_at_step))
-                    # print("x_train_batch :",np.shape(x_train_batch))
-                    # print("y_train_batch :",np.shape(y_train_batch))
-                    # print("write feed_dict")
-                    # print("current_step :", current_step)
-
-                    # print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
-                    # Training log display
-
-                    # # Evaluate the model with x_dev and y_dev
-                    # if current_step % params['evaluate_every'] == 0:
 
                 # if current_step >= 500:
                 #     if accuracy - np.mean(accuracy_list[int(round(len(accuracy_list) / 2)):]) <= 1.e5:
@@ -523,7 +504,7 @@ def train_cnn_rnn2(input_file):
 #
 #     return best_accuracy
 
-def getPath(root_path):
+def getDatafilePath(root_path):
     for _, dirs,_ in os.walk(root_path):
         if dirs != []:
             print(dirs)
@@ -535,7 +516,7 @@ if __name__ == '__main__':
     data_accuracy = {}
     file = "dataSet_accuracy_10P.csv"
     root_path = './data/'
-    for path in getPath(root_path):
+    for path in getDatafilePath(root_path):
         if str(path).split("/")[2] == "ag_news_csv":
             print("Dataset : ",path.split("/")[2])
 

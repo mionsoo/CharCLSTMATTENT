@@ -52,7 +52,7 @@ def attention(inputs, attention_size, time_major=False, return_alphas=False):
 
     if time_major:
         # (T,B,D) => (B,T,D)
-        inputs = tf.array_ops.transpose(inputs, [1, 0, 2])
+        inputs = tf.transpose(inputs, [1, 0, 2])
 
     hidden_size = inputs.shape[2].value  # D value - hidden size of the RNN layer
 
@@ -72,8 +72,8 @@ def attention(inputs, attention_size, time_major=False, return_alphas=False):
 
     alphas = tf.nn.softmax(vu, name='alphas')         # (B,T) shape
     # Output of (Bi-)RNN is reduced with attention vector; the result has (B,D) shape
-    output = tf.reduce_sum(inputs * tf.expand_dims(alphas, -1), 1)
-
+    output = tf.reduce_sum(inputs * tf.expand_dims(alphas, -1), 0)
+    # output = inputs[-1]
 
     if not return_alphas:
         return output
