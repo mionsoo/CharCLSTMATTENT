@@ -1,9 +1,7 @@
 import os
-import sys
 import json
 import time
 import math
-import shutil
 import pickle
 import logging
 import data_helper
@@ -25,7 +23,7 @@ def train_cnn_rnn2(input_file):
 
     start_vect = time.time()
     # input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/yahoo_answers_csv/train50000_2.csv'
-    input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/ag_news_csv/train_10P.csv'
+    # input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/ag_news_csv/train_10P.csv'
     # input_file = '/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master/data/train.csv.zip'
     # input_file = sys.argv[1]
 
@@ -59,12 +57,6 @@ def train_cnn_rnn2(input_file):
     # Create a directory, everything related to the training will be saved in this directory
     timestamp = str(int(time.time()))
     out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
-
-    # trained_dir = '/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master/result/trained_results_' + timestamp + '/'
-    # # if os.path.exists(trained_dir):
-    # #     shutil.rmtree(trained_dir)
-    # if not os.path.exists(trained_dir)
-    # os.makedirs(trained_dir)
 
     graph = tf.Graph()
     with graph.as_default():
