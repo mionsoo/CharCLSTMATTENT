@@ -17,33 +17,36 @@ from sklearn.model_selection import train_test_split
 
 logging.getLogger().setLevel(logging.INFO)
 
+tf.flags.DEFINE_string("lang", "kor","")
+tf.flags.DEFINE_string("split", "root","")
+tf.flags.DEFINE_integer("limitVocab",None,"")
+
+FLAGS = tf.flags.FLAGS
+
 def train_cnn_rnn2(input_file):
     accuracy_list=[]
     dict1 = list(r'abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:"/\|_@#$%^&*~`+-=<>()[]{}') + ['\n', "'"]
 
     start_vect = time.time()
-    # input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/yahoo_answers_csv/train50000_2.csv'
-    # input_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/ag_news_csv/train_10P.csv'
-    # input_file = '/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master/data/train.csv.zip'
-    # input_file = sys.argv[1]
 
     # x_, y_, vocabulary, vocabulary_inv,df, labels = data_helper.load_data_modified(input_file)
     x_, y_, vocabulary, vocabulary_inv, labels,max_word_length = data_helper.load_data_modified_char(input_file)
+    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels = data_helper.load_data_kor(input_file,FLAGS.lang,FLAGS.split,FLAGS.vocabLimit)
 
     # x_, y_, vocabulary, vocabulary_inv, df, labels = data_helper.load_data(input_file)
 
     training_config = './training_config.json'
-    # training_config = sys.argv[2]
     params = json.loads(open(training_config).read())
 
     # Assign a 300 dimension vector to each word
-    # word_embeddings = data_helper.load_embeddings(vocabulary)
-    char_embeddings = data_helper.load_char_embeddings(vocabulary)
-    # embedding_mat = [word_embeddings[word] for index, word in enumerate(vocabulary_inv)]
-    embedding_mat = [char_embeddings[char] for index, char in enumerate(vocabulary_inv) if char in dict1]
-    # print(char_embeddings)
+    word_embeddings = data_helper.load_embeddings(vocabulary)
+    embedding_mat = [word_embeddings[word] for index, word in enumerate(vocabulary_inv)]
+
+    # Char-Embedding
+    # char_embeddings = data_helper.load_char_embeddings(vocabulary)
+    # embedding_mat = [char_embeddings[char] for index, char in enumerate(vocabulary_inv) if char in dict1]
+
     embedding_mat = np.array(embedding_mat, dtype = np.float32)
-    # print(np.shape(embedding_mat))
 
     # Split the original dataset into train set and test set
     x, x_test, y, y_test = train_test_split(x_, y_, test_size=0.1)
@@ -56,7 +59,7 @@ def train_cnn_rnn2(input_file):
 
     # Create a directory, everything related to the training will be saved in this directory
     timestamp = str(int(time.time()))
-    out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
+    out_dir = os.path.abspath(os.path.join("/media/gon/Volume", "runs", timestamp))
 
     graph = tf.Graph()
     with graph.as_default():
@@ -206,23 +209,20 @@ def train_cnn_rnn2(input_file):
                 if accuracy > best_accuracy:
                     best_accuracy, best_at_step = accuracy, current_step
                     print('Saved model {} at step {}'.format(path, current_step))
-
                     print('Best accuracy {} at step {}'.format(best_accuracy, best_at_step))
 
-                # if current_step >= 500:
-                #     if accuracy - np.mean(accuracy_list[int(round(len(accuracy_list) / 2)):]) <= 1.e5:
-                #         print("early Stopping")
-                #         break
-
-                print('Training is complete, testing the best model on x_test and y_test')
+                if current_step >= 500:
+                    if accuracy - np.mean(accuracy_list[int(round(len(accuracy_list) / 2)):]) <= 0.01:
+                        print("Early Stopping")
+                        break
 
                 # Save the model files to trained_dir. predict.py needs trained model files.
                 saver.save(sess, checkpoint_dir+ "/best_model.ckpt")
 
-                # Evaluate x_test and y_test
-                print(checkpoint_prefix + '-' + str(best_at_step))
-                # print(list(sess))
-                saver.restore(sess, checkpoint_prefix + '-' + str(best_at_step))
+            # Evaluate x_test and y_test
+            print('Training is complete, testing the best model on x_test and y_test')
+            print(checkpoint_prefix + '-' + str(best_at_step))
+            saver.restore(sess, checkpoint_prefix + '-' + str(best_at_step))
 
 
     # Save trained parameters and files since predict.py needs them
@@ -500,27 +500,27 @@ def getDatafilePath(root_path):
     for _, dirs,_ in os.walk(root_path):
         if dirs != []:
             print(dirs)
-            return [root_path +dir + "/train_10P.csv" for dir in dirs if dir != []]
+            return [root_path +dir + "/NNST_data.csv" for dir in dirs if dir != []]
 
 if __name__ == '__main__':
     # python3 train.py ./data/train.csv.zip ./training_config.json
     # 0: Accuracy,
     data_accuracy = {}
-    file = "dataSet_accuracy_10P.csv"
+    file = "/home/gon/Desktop/NNST-Naver-News-for-Standard-and-Technology-Database-master/nnst/NNST_data.csv"
     root_path = './data/'
     for path in getDatafilePath(root_path):
-        if str(path).split("/")[2] == "ag_news_csv":
-            print("Dataset : ",path.split("/")[2])
 
-            best_accuracy, accuracy, checkpoint_dir, duration = train_cnn_rnn2(path)
+        print("Dataset : ",path.split("/")[2])
 
-            columns = [accuracy, best_accuracy, checkpoint_dir.split("/")[-2], duration]
-            indexes = ["Acc", "Best_Acc", "Directory", "Elapse Time"]
+        best_accuracy, accuracy, checkpoint_dir, duration = train_cnn_rnn2(path)
 
-            if os.path.exists(root_path+file):
-                df = DataFrame.from_csv(root_path + file)
-            else:
-                df = DataFrame(index=indexes)
-            df[str(path).split("/")[2]] = columns
+        columns = [accuracy, best_accuracy, checkpoint_dir.split("/")[-2], duration]
+        indexes = ["Acc", "Best_Acc", "Directory", "Elapse Time"]
 
-            df.to_csv(root_path+file)
+        if os.path.exists(root_path+file):
+            df = DataFrame.from_csv(root_path + file)
+        else:
+            df = DataFrame(index=indexes)
+        df[str(path).split("/")[2]] = columns
+
+        df.to_csv(root_path+file)

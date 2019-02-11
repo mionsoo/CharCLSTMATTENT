@@ -1,10 +1,14 @@
 import re
+import os
+import pickle
 import tqdm
 import logging
 import itertools
 import numpy as np
 import pandas as pd
+import hanja
 import random
+from KoreanTagger import MeCabParser
 from hangul_utils import word_tokenize
 from nltk.corpus import stopwords
 
@@ -82,13 +86,13 @@ def pad_sentences(sentences, padding_word="<PAD/>", forced_sequence_length=None)
         else:
             padded_sentence = sentence + [padding_word] * num_padding
         padded_sentences.append(padded_sentence)
-    return padded_sentences
+    return padded_sentences, sequence_length
 
 
-def build_vocab(sentences):
+def build_vocab(sentences, limitVocab):
     word_counts = Counter(itertools.chain(*sentences))
-    vocabulary_inv = [word[0] for word in word_counts.most_common()]
-    vocabulary = {word: index for index, word in enumerate(vocabulary_inv)}
+    vocabulary_inv = {idx: word[0] for idx, word in enumerate(word_counts.most_common(limitVocab))}
+    vocabulary = {vocabulary_inv.get(i) : i for i in vocabulary_inv}
     return vocabulary, vocabulary_inv
 
 
@@ -263,6 +267,58 @@ def load_data_modified_char(filename):
     # vocabulary = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}\n"
 
     return data_x,data_y,vocabulary,vocabulary_inv,labels,actual_max_length
+
+
+
+def load_data_kor(file,lang,split,limitVocab):
+    # file = "/home/gon/Desktop/NNST-Naver-News-for-Standard-and-Technology-Database-master/nnst/NNST_data.csv"
+    pklFile = "/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master2/CharCLSTMATTENT/pkl/"+ lang + "/"+ split + "/"+ "data_preprocess.pkl"
+    if not check_pickle_file(pklFile):
+        with open(pklFile,"wb") as f:
+            df = pd.read_csv(file)
+            labels2 = sorted(list(set(df["class"].tolist())))
+            num_labels = len(labels2)
+            one_hot2 = np.zeros((num_labels, num_labels), int)
+            np.fill_diagonal(one_hot2, 1)
+            label_dict = dict(zip(labels2, one_hot2))
+            rawText = df["text"]
+            df["raw_text"] = rawText
+
+            x_raw = preprocess_data_by_split_type(df, split)
+            y_raw = df["class"].apply(lambda y: label_dict[y]).tolist()
+
+            pickle.dump((x_raw, y_raw, labels2, rawText),f)
+    else:
+        with open(pklFile,"rb") as f:
+            x_raw, y_raw, labels2, rawText = pickle.load(f)
+
+    x_raw, max_length = pad_sentences(x_raw)
+    vocabulary, vocabulary_inv = build_vocab(x_raw,limitVocab)
+    x = zip(np.array([[vocabulary[word] for word in sentence] for sentence in x_raw]),rawText)
+    y = np.array(y_raw)
+
+
+    return x, y, vocabulary, vocabulary_inv, max_length, labels2
+
+def preprocess_data_by_split_type(df,split):
+    processedData = []
+    if split.startswith("root"):
+        processedData = [list(MeCabParser().parseByLinearly(hanja.translate(x, "substitution"))) for x in df["text"] if not isinstance(x, float)]
+    elif split.startswith("word"):
+        processedData = [list(word_tokenize(hanja.translate(x,"substitution"))) for x in df["text"] if not isinstance(x, float)]
+
+    return processedData
+
+def check_pickle_file(pklPath):
+    if not os.path.exists(pklPath):
+        return False
+
+    return True
+
+
+def translated_texts_hanja_to_kor(text):
+    return hanja.translate(text,"substitution")
+
 
 if __name__ == "__main__":
     train_file = './data/train.csv.zip'
