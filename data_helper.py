@@ -48,7 +48,7 @@ def clean_str(s):
     return s.strip().lower()
 
 
-def load_embeddings(vocabulary):
+def load_embeddings(vocabulary,embeddingDim):
     word_embeddings = {}
     # dic = list("abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}\n ")
 
@@ -84,7 +84,9 @@ def pad_sentences(sentences, padding_word="<PAD/>", forced_sequence_length=None)
             logging.info('This sentence has to be cut off because it is longer than trained sequence length')
             padded_sentence = sentence[0:sequence_length]
         else:
-            padded_sentence = sentence + [padding_word] * num_padding
+            print(sentence)
+            print(type(sentence))
+            padded_sentence = sentence + ([padding_word] * num_padding)
         padded_sentences.append(padded_sentence)
     return padded_sentences, sequence_length
 
@@ -286,26 +288,58 @@ def load_data_kor(file,lang,split,limitVocab):
 
             x_raw = preprocess_data_by_split_type(df, split)
             y_raw = df["class"].apply(lambda y: label_dict[y]).tolist()
-
-            pickle.dump((x_raw, y_raw, labels2, rawText),f)
+            max_length = max([len(i)for i in x_raw])
+            pickle.dump((x_raw, y_raw, labels2, rawText,max_length),f)
     else:
         with open(pklFile,"rb") as f:
-            x_raw, y_raw, labels2, rawText = pickle.load(f)
+            x_raw, y_raw, labels2, rawText,max_length = pickle.load(f)
 
-    x_raw, max_length = pad_sentences(x_raw)
-    vocabulary, vocabulary_inv = build_vocab(x_raw,limitVocab)
-    x = zip(np.array([[vocabulary[word] for word in sentence] for sentence in x_raw]),rawText)
+    vocabulary, vocabulary_inv = build_vocab(x_raw, limitVocab)
+    vocabulary["<PAD>"] = len(vocabulary)
+    vocabulary_inv[len(vocabulary_inv)] = "<PAD>"
+    vocabulary["<UNK>"] = len(vocabulary)
+    vocabulary_inv[len(vocabulary_inv)] = "<UNK>"
+
+    x_raw = padding(x_raw,vocabulary,max_length)
+    # x_raw, max_length = pad_sentences(x_raw)
+
+
+    x = zip(np.array(x_raw), rawText)
     y = np.array(y_raw)
 
 
     return x, y, vocabulary, vocabulary_inv, max_length, labels2
 
+def padding(r_data,vocab,max_length):
+    data = []
+    for raw in r_data:
+        d = []
+        for w in raw:
+            idx = vocab.get(w)
+            if idx:
+                d.append(idx)
+            else:
+                d.append(vocab['<UNK>'])
+        if len(d) < max_length:
+            for _ in range(max_length - len(d)):
+                d.append(vocab['<PAD>'])
+        else:
+            d = d[:max_length]
+        data.append(np.array(d))
+    data = np.array(data)
+    return data
+
+
 def preprocess_data_by_split_type(df,split):
     processedData = []
+    mp = MeCabParser()
     if split.startswith("root"):
-        processedData = [list(MeCabParser().parseByLinearly(hanja.translate(x, "substitution"))) for x in df["text"] if not isinstance(x, float)]
+        processedData = df["text"].apply(lambda x: mp.parseByLinearly(hanja.translate(x.strip(), "substitution")) if not isinstance(x, float) else " ").tolist()
+
+        # processedData = [list(MeCabParser().parseByLinearly(hanja.translate(x.strip(), "substitution"))) for x in df["text"] if not isinstance(x, float)]
     elif split.startswith("word"):
-        processedData = [list(word_tokenize(hanja.translate(x,"substitution"))) for x in df["text"] if not isinstance(x, float)]
+        processedData = df["text"].apply(lambda x: ' '.join(list(word_tokenize(hanja.translate(x.strip(), "substitution")))) if not isinstance(x, float) else " ").tolist()
+        # processedData = [list(word_tokenize(hanja.translate(x,"substitution"))) for x in df["text"] if not isinstance(x, float)]
 
     return processedData
 
@@ -314,6 +348,22 @@ def check_pickle_file(pklPath):
         return False
 
     return True
+
+def process_make_report(x_test,prediction,raw_text,vocabulary_inv,y_test):
+    input_text = [vocabulary_inv.get(i) for i in np.array(x_test).reshape(1, -1)[0]]
+    text = [list(filter(lambda x: x != "<PAD>", i)) for i in np.array(input_text).reshape(60000,24)]
+
+    prediction = (np.array(prediction).reshape(1, -1) + 1)
+    label = [list(i).index(1) for i in y_test]
+
+
+    # prediction = ["predict"] + list(prediction[0])
+    # label = ["label"] + label
+    # text = ["input_text"] + text
+    # raw_text = ["raw_test"] + list(raw_text)
+
+
+    return list(prediction[0][:len(x_test)]), label, text, list(raw_text)
 
 
 def translated_texts_hanja_to_kor(text):

@@ -9,29 +9,26 @@ import datetime
 import numpy as np
 import tensorflow as tf
 from pandas import Series,DataFrame
-# from text_cnn_rnn import TextCNNRNN
-from char_cnn_biLstm2 import TextCNNRNN
-# from char_cnn_biLstm3 import TextCNNRNN
+from cnn import TextCNNRNN
 from sklearn.model_selection import train_test_split
 
 
 logging.getLogger().setLevel(logging.INFO)
 
+tf.flags.DEFINE_string("filename", "Accuracy_C128","")
 tf.flags.DEFINE_string("lang", "kor","")
 tf.flags.DEFINE_string("split", "root","")
-tf.flags.DEFINE_integer("limitVocab",None,"")
+tf.flags.DEFINE_integer("limitVocab", None,"")
 
 FLAGS = tf.flags.FLAGS
 
 def train_cnn_rnn2(input_file):
     accuracy_list=[]
-    dict1 = list(r'abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:"/\|_@#$%^&*~`+-=<>()[]{}') + ['\n', "'"]
-
     start_vect = time.time()
 
     # x_, y_, vocabulary, vocabulary_inv,df, labels = data_helper.load_data_modified(input_file)
-    x_, y_, vocabulary, vocabulary_inv, labels,max_word_length = data_helper.load_data_modified_char(input_file)
-    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels = data_helper.load_data_kor(input_file,FLAGS.lang,FLAGS.split,FLAGS.vocabLimit)
+    # x_, y_, vocabulary, vocabulary_inv, labels,max_word_length = data_helper.load_data_modified_char(input_file)
+    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels = data_helper.load_data_kor(input_file,FLAGS.lang,FLAGS.split,FLAGS.limitVocab)
 
     # x_, y_, vocabulary, vocabulary_inv, df, labels = data_helper.load_data(input_file)
 
@@ -39,8 +36,8 @@ def train_cnn_rnn2(input_file):
     params = json.loads(open(training_config).read())
 
     # Assign a 300 dimension vector to each word
-    word_embeddings = data_helper.load_embeddings(vocabulary)
-    embedding_mat = [word_embeddings[word] for index, word in enumerate(vocabulary_inv)]
+    word_embeddings = data_helper.load_embeddings(vocabulary,params['embedding_dim'])
+    embedding_mat = [word_embeddings[vocabulary_inv.get(idx)] for idx in vocabulary_inv]
 
     # Char-Embedding
     # char_embeddings = data_helper.load_char_embeddings(vocabulary)
@@ -48,9 +45,12 @@ def train_cnn_rnn2(input_file):
 
     embedding_mat = np.array(embedding_mat, dtype = np.float32)
 
-    # Split the original dataset into train set and test set
-    x, x_test, y, y_test = train_test_split(x_, y_, test_size=0.1)
 
+    # Split the original dataset into train set and test set
+    x_ = np.array(list(x_))
+    x, x_test, y, y_test = train_test_split(x_, y_, test_size=0.1)
+    x_test, raw_text = zip(*np.array(x_test))
+    x,_ = zip(*np.array(x))
     # Split the train set into train set and dev set
     x_train, x_dev, y_train, y_dev = train_test_split(x, y, test_size=0.1)
 
@@ -68,7 +68,7 @@ def train_cnn_rnn2(input_file):
         with sess.as_default():
             cnn_rnn = TextCNNRNN(
                 embedding_mat=embedding_mat,
-                sequence_length=x_train.shape[1],
+                sequence_length=max_word_length,
                 num_classes = y_train.shape[1],
                 non_static=params['non_static'],
                 hidden_unit=params['hidden_unit'],
@@ -197,32 +197,63 @@ def train_cnn_rnn2(input_file):
                 dev_summary_writer.add_summary(summaries, current_step)
                 return A_s/n_batch
 
+            def test(x_test, y_test,num_class):
+                total_test_correct = 0
+                predictionList = []
+
+                A_s = 0
+                n_batch = int(math.ceil(len(x_test) / params["batch_size"]))
+
+                q = 0
+                for idx in range(n_batch):
+                    y_test_batch = np.zeros([params["batch_size"], num_class])
+                    x_test_batch = np.ndarray([params["batch_size"], max_word_length])
+                    for batch_num in range(params["batch_size"]):
+                        y_test_batch[batch_num] = y_test[q]
+                        x_test_batch[batch_num] = x_test[q]
+                        q += 1
+                        if q >= len(x_test):
+                            q = 0
+
+                    accuracy, loss, num_test_correct, predictions, summaries= dev_step(x_test_batch, y_test_batch)
+                    A_s += accuracy
+                    total_test_correct += num_test_correct
+                    predictionList.append(predictions)
+
+                return A_s/n_batch, predictionList
+
+
             for epoch in range(params["num_epochs"]):
                 current_step = tf.train.global_step(sess,global_step)
 
                 training(x_train,y_train,y_train.shape[1])
                 accuracy = validation(x_dev,y_dev,y_dev.shape[1])
+                accuracy_list.append(accuracy)
 
                 path = saver.save(sess, checkpoint_prefix, global_step=current_step)
                 print('Accuracy on dev set: {}'.format(accuracy))
 
                 if accuracy > best_accuracy:
                     best_accuracy, best_at_step = accuracy, current_step
+                    saver.save(sess, checkpoint_dir + "/best_model.ckpt")
                     print('Saved model {} at step {}'.format(path, current_step))
                     print('Best accuracy {} at step {}'.format(best_accuracy, best_at_step))
 
                 if current_step >= 500:
-                    if accuracy - np.mean(accuracy_list[int(round(len(accuracy_list) / 2)):]) <= 0.01:
+                    if accuracy - np.mean(accuracy_list[int(round(len(accuracy_list) / 2)):]) <= 0.001:
                         print("Early Stopping")
                         break
 
                 # Save the model files to trained_dir. predict.py needs trained model files.
-                saver.save(sess, checkpoint_dir+ "/best_model.ckpt")
+
 
             # Evaluate x_test and y_test
             print('Training is complete, testing the best model on x_test and y_test')
             print(checkpoint_prefix + '-' + str(best_at_step))
             saver.restore(sess, checkpoint_prefix + '-' + str(best_at_step))
+            test_accuracy, prediction = test(x_test,y_test,y_test.shape[1])
+            print('Accuracy on test set: {}'.format(test_accuracy))
+
 
 
     # Save trained parameters and files since predict.py needs them
@@ -232,8 +263,6 @@ def train_cnn_rnn2(input_file):
         pickle.dump(embedding_mat, outfile, pickle.HIGHEST_PROTOCOL)
     with open(checkpoint_dir + '/labels.json', 'w') as outfile:
         json.dump(labels, outfile, indent=4, ensure_ascii=False)
-
-    params['sequence_length'] = x_train.shape[1]
     with open(checkpoint_dir + '/trained_parameters.json', 'w') as outfile:
         json.dump(params, outfile, indent=4, sort_keys=True, ensure_ascii=False)
 
@@ -241,7 +270,7 @@ def train_cnn_rnn2(input_file):
     print("training Runtime: %0.2f Minutes" % ((time.time() - start_vect) / 60))
     print("\n")
 
-    return best_accuracy, accuracy, checkpoint_dir, duration
+    return test_accuracy, accuracy, checkpoint_dir, duration, raw_text, prediction ,x_test,y_test, vocabulary_inv ,out_dir
 
 # def train_cnn_rnn(input_file):
 #     accuracy_list=[]
@@ -498,29 +527,51 @@ def train_cnn_rnn2(input_file):
 
 def getDatafilePath(root_path):
     for _, dirs,_ in os.walk(root_path):
+
         if dirs != []:
-            print(dirs)
+            print([root_path +dir + "/NNST_data.csv" for dir in dirs if dir != []])
             return [root_path +dir + "/NNST_data.csv" for dir in dirs if dir != []]
+
+
+
+
+def process_make_dataframe(indexes):
+    if os.path.exists('./acc/' + FLAGS.filename):
+        return DataFrame.from_csv(root_path + FLAGS.filename)
+    else:
+        return DataFrame(index=indexes)
+
+
+
 
 if __name__ == '__main__':
     # python3 train.py ./data/train.csv.zip ./training_config.json
     # 0: Accuracy,
     data_accuracy = {}
-    file = "/home/gon/Desktop/NNST-Naver-News-for-Standard-and-Technology-Database-master/nnst/NNST_data.csv"
+    # file = "/home/gon/Desktop/NNST-Naver-News-for-Standard-and-Technology-Database-master/nnst/NNST_data.csv"
     root_path = './data/'
-    for path in getDatafilePath(root_path):
+    path = getDatafilePath(root_path)[0]
+    print(path)
+    print("Dataset : ",path.split("/")[3])
 
-        print("Dataset : ",path.split("/")[2])
+    test_accuracy, accuracy, checkpoint_dir, duration,raw_text,prediction,x_test,y_test,vocabulary_inv,out_dir = train_cnn_rnn2(path)
 
-        best_accuracy, accuracy, checkpoint_dir, duration = train_cnn_rnn2(path)
+    prediction, label, text, raw_text = data_helper.process_make_report(x_test,prediction,raw_text,vocabulary_inv,y_test)
 
-        columns = [accuracy, best_accuracy, checkpoint_dir.split("/")[-2], duration]
-        indexes = ["Acc", "Best_Acc", "Directory", "Elapse Time"]
 
-        if os.path.exists(root_path+file):
-            df = DataFrame.from_csv(root_path + file)
-        else:
-            df = DataFrame(index=indexes)
-        df[str(path).split("/")[2]] = columns
+    columns = [accuracy, test_accuracy, precision,recall,f1_score,checkpoint_dir.split("/")[-2], duration]
+    indexes = ["Acc", "Test_Acc", "Precision","Recall","F1_Score","Directory", "Elapse Time"]
+    df_csv = process_make_dataframe(indexes)
+    df_csv[path.split("/")[3]] = columns
+    df_csv.to_csv('./acc/' + FLAGS.filename + ".csv")
 
-        df.to_csv(root_path+file)
+
+    indexes = ["Predict", "Label", "input_text", "raw_text"]
+    df_excel = DataFrame()
+    df_excel["Predict"] = prediction
+    df_excel["Label"] = label
+    df_excel["input_text"] = text
+    df_excel["raw_text"] = raw_text
+    # input datas in Dataframe
+    df_excel.to_excel(out_dir+"/"+FLAGS.filename+".xlsx")
+

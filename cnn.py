@@ -18,7 +18,7 @@ class TextCNNRNN(object):
         return tf.Variable(initial,name=tf_name)
 
     def conv2D(self,input, W, b,tf_name):
-        conv = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='SAME', name=tf_name)
+        conv = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='VALID', name=tf_name)
         return tf.nn.relu(tf.nn.bias_add(conv, b))
 
     def __init__(self, non_static, hidden_unit, sequence_length, max_pool_size,embedding_mat,
@@ -47,6 +47,7 @@ class TextCNNRNN(object):
 
 
             emb = tf.expand_dims(self.embedded_chars, -1)
+        print("{} : {}".format("emb.shape", np.shape(emb)))
         # with tf.device('/cpu:0'), tf.name_scope('embedding'):
         #     # Quantization layer
         #
@@ -60,43 +61,31 @@ class TextCNNRNN(object):
         #     emb = tf.expand_dims(self.embedded_chars, -1)  # Add the channel dim, thus the shape of x is [batch_size, l0, alphabet_size, 1]
 
         pooled_concat = []
-        for i in range(4):
+        for filter_size in filter_sizes:
             with tf.name_scope('conv-maxpool-%d' % int(3)):
                  # Zero paddings so that the convolution output have dimension batch x sequence_length x emb_size x channel
-                 W1 = self.weight_variable([5,sequence_length,1,64],'W1')
-                 b1 = self.bias_variable([64],'b1')
+                 W1 = self.weight_variable([int(filter_size),embedding_size, 1, num_filters],'W1')
+                 b1 = self.bias_variable([num_filters],'b1')
                  conv1 = self.conv2D(emb,W1,b1,'Conv1')
 
-                 pool2= tf.nn.max_pool(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool2')
-
-                 W3 = self.weight_variable([2,sequence_length,64,128],'W3')
-                 b3 = self.bias_variable([128],'b3')
-                 conv3 = self.conv2D(pool2,W3,b3,'Conv3')
-
-                 pooled = tf.nn.max_pool(conv3, ksize=[1, 3, 3, 1], strides=[1, 3, 3, 1], padding='SAME', name='pool6')
-                 print("{} : {}".format("conv1", np.shape(conv1)))
-                 print("{} : {}".format("pool2", np.shape(pool2)))
-                 print("{} : {}".format("conv3", np.shape(conv3)))
-
-                 print("{} : {}".format("pooled", np.shape(pooled)))
-
+                 pooled= tf.nn.max_pool(conv1, ksize=[1, sequence_length - int(filter_size) + 1, 1, 1], strides=[1, 1, 1, 1], padding='VALID', name='pool2')
 
 
                  pooled_concat.append(pooled)
 
         pooled_concat = tf.concat(pooled_concat, 3)
         print("{} : {}".format("pooled_concat.shape", np.shape(pooled_concat)))
-        pooled_concat = tf.reshape(pooled_concat, [-1, sequence_length, 512 * 2])
+        pooled_concat = tf.reshape(pooled_concat, [-1, num_filters*len(filter_sizes)])
         pooled_concat = tf.nn.dropout(pooled_concat, self.dropout_keep_prob)
         print("{} : {}".format("pooled_concat_reshape.shape", np.shape(pooled_concat)))
 
 
         with tf.name_scope('output'):
-            W = tf.Variable(tf.truncated_normal([hidden_unit * 2, num_classes], stddev=0.1), name='W')
+            W = tf.Variable(tf.truncated_normal([num_filters*len(filter_sizes), num_classes], stddev=0.1), name='W')
             b = tf.Variable(tf.constant(0., shape=[num_classes]), name='b')
             l2_loss += tf.nn.l2_loss(W)
             l2_loss += tf.nn.l2_loss(b)
-            self.scores = tf.nn.xw_plus_b(drop, W, b, name='scores')
+            self.scores = tf.nn.xw_plus_b(pooled_concat, W, b, name='scores')
             print("{} : {}".format("scores.shape", self.scores))
 
             self.predictions = tf.argmax(self.scores, 1, name='predictions')
