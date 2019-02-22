@@ -70,7 +70,6 @@ class TextCNNRNN(object):
 
                  pooled= tf.nn.max_pool(conv1, ksize=[1, sequence_length - int(filter_size) + 1, 1, 1], strides=[1, 1, 1, 1], padding='VALID', name='pool2')
 
-
                  pooled_concat.append(pooled)
 
         pooled_concat = tf.concat(pooled_concat, 3)

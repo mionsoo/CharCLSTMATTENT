@@ -4,12 +4,10 @@
     "embedding_dim": 300,
     "evaluate_every": 100,
     "display_every" : 10,
-    "filter_sizes": "4,8,12",
-    "hidden_unit": 128,
+    "filter_sizes": "6,9,12",
     "l2_reg_lambda": 0.0,
-    "learning_rate" : 1e-4,
+    "learning_rate" : 0.0008,
     "max_pool_size": 2,
     "non_static": true,
-    "num_epochs": 10,
-    "num_filters": 128
+    "num_epochs": 10
 }

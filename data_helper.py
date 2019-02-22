@@ -271,10 +271,32 @@ def load_data_modified_char(filename):
     return data_x,data_y,vocabulary,vocabulary_inv,labels,actual_max_length
 
 
+def load_test_data_kor(file,split,vocabulary):
+    df = pd.read_csv(file)
+    labels2 = sorted(list(set(df["class"].tolist())))
+    num_labels = len(labels2)
+    one_hot2 = np.zeros((num_labels, num_labels), int)
+    np.fill_diagonal(one_hot2, 1)
+    label_dict = dict(zip(labels2, one_hot2))
+    rawText = df["text"]
+    df["raw_text"] = rawText
+
+    x_raw = preprocess_data_by_split_type(df, split)
+    y_raw = df["class"].apply(lambda y: label_dict[y]).tolist()
+    max_length = max([len(i) for i in x_raw])
+
+    x_raw = padding(x_raw, vocabulary, max_length)
+    df.sort_values()
+    x = zip(np.array(x_raw), rawText)
+    y = np.array(y_raw)
+
+    return x, y, max_length
+
+
 
 def load_data_kor(file,lang,split,limitVocab):
     # file = "/home/gon/Desktop/NNST-Naver-News-for-Standard-and-Technology-Database-master/nnst/NNST_data.csv"
-    pklFile = "/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master2/CharCLSTMATTENT/pkl/"+ lang + "/"+ split + "/"+ "data_preprocess.pkl"
+    pklFile = "/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master2/CharCLSTMATTENT/pkl/"+ lang + "/"+ split + "/"+ file.split("/")[-1].split(".")[0] + "_data_preprocess.pkl"
     if not check_pickle_file(pklFile):
         with open(pklFile,"wb") as f:
             df = pd.read_csv(file)
@@ -338,7 +360,7 @@ def preprocess_data_by_split_type(df,split):
 
         # processedData = [list(MeCabParser().parseByLinearly(hanja.translate(x.strip(), "substitution"))) for x in df["text"] if not isinstance(x, float)]
     elif split.startswith("word"):
-        processedData = df["text"].apply(lambda x: ' '.join(list(word_tokenize(hanja.translate(x.strip(), "substitution")))) if not isinstance(x, float) else " ").tolist()
+        processedData = df["text"].apply(lambda x: list(word_tokenize(hanja.translate(x.strip(), "substitution"))) if not isinstance(x, float) else " ").tolist()
         # processedData = [list(word_tokenize(hanja.translate(x,"substitution"))) for x in df["text"] if not isinstance(x, float)]
 
     return processedData
@@ -350,20 +372,19 @@ def check_pickle_file(pklPath):
     return True
 
 def process_make_report(x_test,prediction,raw_text,vocabulary_inv,y_test):
-    input_text = [vocabulary_inv.get(i) for i in np.array(x_test).reshape(1, -1)[0]]
-    text = [list(filter(lambda x: x != "<PAD>", i)) for i in np.array(input_text).reshape(60000,24)]
-
+    input_text = [vocabulary_inv.get(str(i)) for i in np.array(x_test).reshape(1, -1)[0]]
+    text = [list(filter(lambda x: x != "<PAD>", i)) for i in np.array(input_text).reshape(np.shape(x_test)[0],np.shape(x_test)[1])]
     prediction = (np.array(prediction).reshape(1, -1) + 1)
-    label = [list(i).index(1) for i in y_test]
-
-
-    # prediction = ["predict"] + list(prediction[0])
-    # label = ["label"] + label
-    # text = ["input_text"] + text
-    # raw_text = ["raw_test"] + list(raw_text)
-
+    label = [list(i).index(1)+1 for i in y_test]
 
     return list(prediction[0][:len(x_test)]), label, text, list(raw_text)
+
+
+def process_make_report_no_rawtext(x_test,prediction,raw_text,vocabulary_inv,y_test):
+    prediction = (np.array(prediction).reshape(1, -1) + 1)
+    label = [list(i).index(1)+1 for i in y_test]
+
+    return list(prediction[0][:len(x_test)]), label
 
 
 def translated_texts_hanja_to_kor(text):

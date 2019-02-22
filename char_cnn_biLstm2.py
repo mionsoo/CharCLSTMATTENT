@@ -33,72 +33,103 @@ class TextCNNRNN(object):
 
         l2_loss = tf.constant(0.0)
 
-        # with tf.device('/gpu:0'), tf.name_scope('embedding'):
-        #     if not non_static:
-        #         W = tf.constant(embedding_mat, name='W')
-        #     else:
-        #         W = tf.Variable(embedding_mat, name='W')
-        #     # W = tf.get_variable("embeddings",[alphabet_size,])
-        #     # print("{} : {}".format("W.shape", np.shape(W)))
-        #     # print(W)
-        #     # print("{} : {}".format("input_x.shape", np.shape(self.input_x)))
-        #     # print(self.input_x)
-        #     self.embedded_chars = tf.nn.embedding_lookup(W, self.input_x)
-        #
-        #
-        #     emb = tf.expand_dims(self.embedded_chars, -1)
-        with tf.device('/cpu:0'), tf.name_scope('embedding'):
-            # Quantization layer
+        with tf.device('/gpu:0'), tf.name_scope('embedding'):
+            if not non_static:
+                W = tf.constant(embedding_mat, name='W')
+            else:
+                W = tf.Variable(embedding_mat, name='W')
+            # W = tf.get_variable("embeddings",[alphabet_size,])
+            # print("{} : {}".format("W.shape", np.shape(W)))
+            # print(W)
+            # print("{} : {}".format("input_x.shape", np.shape(self.input_x)))
+            # print(self.input_x)
+            self.embedded_chars = tf.nn.embedding_lookup(W, self.input_x)
 
-            Q = tf.concat(
-                [
-                    tf.zeros([1, alphabet_size]),  # Zero padding vector for out of alphabet characters
-                    tf.one_hot(list(range(alphabet_size)), alphabet_size, 1.0, 0.0)  # one-hot vector representation for alphabets
-                ], 0,
-                name='Q')
-            self.embedded_chars = tf.nn.embedding_lookup(Q, self.input_x)
-            emb = tf.expand_dims(self.embedded_chars, -1)  # Add the channel dim, thus the shape of x is [batch_size, l0, alphabet_size, 1]
+
+            emb = tf.expand_dims(self.embedded_chars, -1)
+        # with tf.device('/cpu:0'), tf.name_scope('embedding'):
+        #     # Quantization layer
+        #
+        #     Q = tf.concat(
+        #         [
+        #             tf.zeros([1, alphabet_size]),  # Zero padding vector for out of alphabet characters
+        #             tf.one_hot(list(range(alphabet_size)), alphabet_size, 1.0, 0.0)  # one-hot vector representation for alphabets
+        #         ], 0,
+        #         name='Q')
+        #     self.embedded_chars = tf.nn.embedding_lookup(Q, self.input_x)
+        #     emb = tf.expand_dims(self.embedded_chars, -1)  # Add the channel dim, thus the shape of x is [batch_size, l0, alphabet_size, 1]
 
         pooled_concat = []
-        for i in range(4):
-            with tf.name_scope('conv-maxpool-%d' % int(3)):
-                 # Zero paddings so that the convolution output have dimension batch x sequence_length x emb_size x channel
-                 W1 = self.weight_variable([5,sequence_length,1,64],'W1')
-                 b1 = self.bias_variable([64],'b1')
-                 conv1 = self.conv2D(emb,W1,b1,'Conv1')
+        # for i in range(4):
+        #     with tf.name_scope('conv-maxpool-%d' % int(3)):
+        #          # Zero paddings so that the convolution output have dimension batch x sequence_length x emb_size x channel
+        #          W1 = self.weight_variable([5,sequence_length,1,64],'W1')
+        #          b1 = self.bias_variable([64],'b1')
+        #          conv1 = self.conv2D(emb,W1,b1,'Conv1')
+        #
+        #          pool2= tf.nn.max_pool(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool2')
+        #
+        #          W3 = self.weight_variable([2,sequence_length,64,128],'W3')
+        #          b3 = self.bias_variable([128],'b3')
+        #          conv3 = self.conv2D(pool2,W3,b3,'Conv3')
+        #
+        #          # W4 = tf.Variable(tf.truncated_normal([3,sequence_length,128,256], stddev=0.1), name='W4')
+        #          # b4 = tf.Variable(tf.constant(0.1, shape=[256]), name='b4')
+        #          # conv4 = tf.nn.conv2d(conv3, W4, strides=[1, 1, 1, 1], padding='SAME', name='conv4')
+        #          # conv4 =  tf.nn.relu(tf.nn.bias_add(conv4, b4), name='relu4')
+        #          # print("{} : {}".format("conv4",np.shape(conv4)))
+        #          #
+        #          #
+        #          # W5 = tf.Variable(tf.truncated_normal([3,sequence_length,256,512], stddev=0.1), name='W5')
+        #          # b5 = tf.Variable(tf.constant(0.1, shape=[512]), name='b5')
+        #          # conv5 = tf.nn.conv2d(conv4, W5, strides=[1, 1, 1, 1], padding='SAME', name='conv5')
+        #          # conv5 =  tf.nn.relu(tf.nn.bias_add(conv5, b5), name='relu5')
+        #          # print("{} : {}".format("conv5",np.shape(conv5)))
+        #          pooled = tf.nn.max_pool(conv3, ksize=[1, 3, 3, 1], strides=[1, 3, 3, 1], padding='SAME', name='pool6')
+        #          print("{} : {}".format("conv1", np.shape(conv1)))
+        #          print("{} : {}".format("pool2", np.shape(pool2)))
+        #          print("{} : {}".format("conv3", np.shape(conv3)))
+        #
+        #          print("{} : {}".format("pooled", np.shape(pooled)))
+        #
+        #
+        #
+        #          pooled_concat.append(pooled)
 
-                 pool2= tf.nn.max_pool(conv1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME', name='pool2')
-
-                 W3 = self.weight_variable([2,sequence_length,64,128],'W3')
-                 b3 = self.bias_variable([128],'b3')
-                 conv3 = self.conv2D(pool2,W3,b3,'Conv3')
-
-                 # W4 = tf.Variable(tf.truncated_normal([3,sequence_length,128,256], stddev=0.1), name='W4')
-                 # b4 = tf.Variable(tf.constant(0.1, shape=[256]), name='b4')
-                 # conv4 = tf.nn.conv2d(conv3, W4, strides=[1, 1, 1, 1], padding='SAME', name='conv4')
-                 # conv4 =  tf.nn.relu(tf.nn.bias_add(conv4, b4), name='relu4')
-                 # print("{} : {}".format("conv4",np.shape(conv4)))
-                 #
-                 #
-                 # W5 = tf.Variable(tf.truncated_normal([3,sequence_length,256,512], stddev=0.1), name='W5')
-                 # b5 = tf.Variable(tf.constant(0.1, shape=[512]), name='b5')
-                 # conv5 = tf.nn.conv2d(conv4, W5, strides=[1, 1, 1, 1], padding='SAME', name='conv5')
-                 # conv5 =  tf.nn.relu(tf.nn.bias_add(conv5, b5), name='relu5')
-                 # print("{} : {}".format("conv5",np.shape(conv5)))
-                 pooled = tf.nn.max_pool(conv3, ksize=[1, 3, 3, 1], strides=[1, 3, 3, 1], padding='SAME', name='pool6')
-                 print("{} : {}".format("conv1", np.shape(conv1)))
-                 print("{} : {}".format("pool2", np.shape(pool2)))
-                 print("{} : {}".format("conv3", np.shape(conv3)))
-
-                 print("{} : {}".format("pooled", np.shape(pooled)))
+        for i, filter_size in enumerate(filter_sizes):
+            with tf.name_scope('conv-maxpool-%s' % filter_size):
+                # Zero paddings so that the convolution output have dimension batch x sequence_length x emb_size x channel
+                num_prio = (int(filter_size) - 1) // 2
+                num_post = (int(filter_size) - 1) - num_prio
+                # print("num_prio : ",num_prio)
+                # print("num_post : ",num_post)
+                # print("pad_prio : ",[self.pad],num_prio)
+                pad_prio = tf.concat([self.pad] * num_prio, 1)
+                pad_post = tf.concat([self.pad] * num_post, 1)
+                emb_pad = tf.concat([pad_prio, emb, pad_post], 1)
+                print([pad_prio,emb,pad_post])
+                print("emb_pad : ",emb_pad)
 
 
 
-                 pooled_concat.append(pooled)
+                filter_shape = [int(filter_size), embedding_size, 1, num_filters]
+                print("filter_shape : ", filter_shape)
+                W = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name='W')
+                b = tf.Variable(tf.constant(0.1, shape=[num_filters]), name='b')
+                conv = tf.nn.conv2d(emb_pad, W, strides=[1, 1, 1, 1], padding='VALID', name='conv')
+
+                h = tf.nn.relu(tf.nn.bias_add(conv, b), name='relu')
+
+                # Maxpooling over the outputs
+                # pooled = tf.nn.max_pool(h, ksize=[1, max_pool_size, 1, 1], strides=[1, max_pool_size, 1, 1], padding='SAME', name='pool')
+                pooled = tf.nn.max_pool(conv, ksize=[1, sequence_length - int(filter_size) + 1, 1, 1], strides=[1, 1, 1, 1], padding='SAME', name='pool2')
+                # pooled = tf.reshape(pooled, [-1, sequence_length, num_filters])
+                # print(np.shape(pooled))
+                pooled_concat.append(pooled)
 
         pooled_concat = tf.concat(pooled_concat, 3)
         print("{} : {}".format("pooled_concat.shape", np.shape(pooled_concat)))
-        pooled_concat = tf.reshape(pooled_concat, [-1, sequence_length, 512 * 2])
+        pooled_concat = tf.reshape(pooled_concat, [-1, sequence_length, num_filters*len(filter_sizes)])
         pooled_concat = tf.nn.dropout(pooled_concat, self.dropout_keep_prob)
         print("{} : {}".format("pooled_concat_reshape.shape", np.shape(pooled_concat)))
 
@@ -110,12 +141,16 @@ class TextCNNRNN(object):
                                      inputs=pooled_concat,
                                      dtype=tf.float32)
 
+        outputs = tf.concat(outputs,2)
+        print("{} : {}".format("outputs.shape", outputs))
+
         # Attention
         with tf.name_scope('Attention_Layer'):
-            attention_output, alphas, _ = attention(outputs, attention_size,time_major=True,return_alphas=True)
+            attention_output, alphas, _ = attention(outputs, attention_size,time_major=False,return_alphas=True)
 
+        print("{} : {}".format("attention_output.shape", attention_output))
         #Dropout
-        drop = tf.nn.dropout(attention_output,self.dropout_keep_prob)
+        drop = tf.nn.dropout(outputs,self.dropout_keep_prob)
         print("{} : {}".format("drop.shape", drop))
 
         with tf.name_scope('output'):
@@ -123,7 +158,7 @@ class TextCNNRNN(object):
             b = tf.Variable(tf.constant(0., shape=[num_classes]), name='b')
             l2_loss += tf.nn.l2_loss(W)
             l2_loss += tf.nn.l2_loss(b)
-            self.scores = tf.nn.xw_plus_b(drop, W, b, name='scores')
+            self.scores = tf.nn.xw_plus_b(drop[:,-1], W, b, name='scores')
             print("{} : {}".format("scores.shape", self.scores))
 
             self.predictions = tf.argmax(self.scores, 1, name='predictions')
