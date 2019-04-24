@@ -13,6 +13,7 @@ import tqdm
 from hangul_utils import word_tokenize
 from nltk.corpus import stopwords
 from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import confusion_matrix
 from multiprocessing import Pool
 
 # CNN
@@ -26,8 +27,8 @@ from cnn import TextCNNRNN
 
 logging.getLogger().setLevel(logging.INFO)
 
-timestamps = '1550826043_32_128'.split('\t')
-tf.flags.DEFINE_string("filename",'cnn_root_Accuracy_2017_jamo_setting_best',"")
+timestamps = '1555905877_32_128'.split('\t')
+tf.flags.DEFINE_string("filename",'cnn_root_Accuracy_2017_jamo_setting_best_10000',"")
 tf.flags.DEFINE_multi_string("timestamp", timestamps, "")
 
 FLAGS = tf.flags.FLAGS
@@ -222,7 +223,7 @@ def predict_unseen_data(timestamp):
     start_vect = time.time()
     # test_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/ag_news_csv/test.csv'
     # test_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/sogou_news_csv/test.csv'
-    test_file = '/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master2/CharCLSTMATTENT/data/kor/test10P.csv'
+    test_file = '/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master2/CharCLSTMATTENT/data/kor/test.csv'
     # test_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/yelp_review_full_csv/test.csv'
     # test_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/yelp_review_polarity_csv/test.csv'
     # test_file = '/home/gon/Desktop/rnn-text-classification-tf-master/data/dbpedia_csv/test.csv'
@@ -259,7 +260,8 @@ def predict_unseen_data(timestamp):
         num_filters=params['num_filters'],
         num_classes=len(labels),
         embedding_size=params['embedding_dim'],
-        l2_reg_lambda=params['l2_reg_lambda'])
+        l2_reg_lambda=params['l2_reg_lambda'],
+        tficf=FLAGS.tficf)
     session_conf = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
     session_conf.gpu_options.allow_growth = True
 
@@ -372,6 +374,9 @@ def record_test_output(result):
     prediction, label, text, raw_text = data_helper.process_make_report(x_, predictions, raw_text, vocabulary_inv, y_)
     precision, recall, f1_score, _ = precision_recall_fscore_support(label, prediction, average=None)
     precision, recall, f1_score = recalculate((precision, recall, f1_score))
+
+    print(confusion_matrix(label,prediction))
+
     duration = "%0.2f Min" % ((time.time() - start_vect) / 60)
     columns = [accuracy, loss, precision, recall, f1_score, trained_dir.split("/")[-3], duration]
     indexes = ["Acc", "Loss", "Precision", "Recall", "F1_Score", "Directory", "Elapse Time"]
@@ -387,6 +392,7 @@ def record_test_output(result):
     df_excel["raw_text"] = raw_text
     # input datas in Dataframe
     df_excel.to_excel(trained_dir+"/"+FLAGS.filename+".xlsx")
+    df_excel.to_csv(trained_dir + "/" + FLAGS.filename + ".csv")
 
 
 

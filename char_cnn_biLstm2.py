@@ -22,7 +22,7 @@ class TextCNNRNN(object):
         return tf.nn.relu(tf.nn.bias_add(conv, b))
 
     def __init__(self, non_static, hidden_unit, sequence_length, max_pool_size,embedding_mat,
-                 num_classes, embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0,alphabet_size= 70,attention_size = 100):
+                 num_classes, embedding_size, filter_sizes, num_filters, l2_reg_lambda=0.0,alphabet_size= 70,attention_size = 100,embedding_category_mat=[],tficf=False):
 
         self.input_x = tf.placeholder(tf.int32, [None, sequence_length], name='input_x')
         self.input_y = tf.placeholder(tf.float32, [None,num_classes], name='input_y')

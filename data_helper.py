@@ -7,13 +7,15 @@ import itertools
 import numpy as np
 import pandas as pd
 import hanja
-import random
+import time
+from flashtext.keyword import KeywordProcessor
 from KoreanTagger import MeCabParser
 from hangul_utils import word_tokenize
 from nltk.corpus import stopwords
+from math import log
 
 from collections import Counter
-
+from multiprocessing import Pool
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -48,6 +50,15 @@ def clean_str(s):
     return s.strip().lower()
 
 
+def load_category_embeddings(vocabulary):
+    word_embeddings = {}
+    # dic = list("abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}\n ")
+
+    for word in vocabulary:
+        word_embeddings[word] = np.random.uniform(-0.25, 0.25, 384)
+    return word_embeddings
+
+
 def load_embeddings(vocabulary,embeddingDim):
     word_embeddings = {}
     # dic = list("abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}\n ")
@@ -65,6 +76,16 @@ def load_char_embeddings(vocabulary):
         if c in dict1:
             char_embeddings[char] = np.random.uniform(-0.25, 0.25, len(dict1))
     return char_embeddings
+
+
+def categoryEmbedding(categoryClusters,num_filters,filter_sizes):
+    categoryEmbeddingMats=[]
+    for categoryCluster in categoryClusters:
+        _vocabulary,_vocabulary_inv = build_category_vocab(categoryCluster)
+        word_embeddings = load_category_embeddings(_vocabulary)
+        embedding_mat = [word_embeddings[_vocabulary_inv.get(idx)] for idx in _vocabulary_inv]
+        categoryEmbeddingMats.append(embedding_mat)
+    return np.concatenate(categoryEmbeddingMats,0)
 
 
 def pad_sentences(sentences, padding_word="<PAD/>", forced_sequence_length=None):
@@ -96,6 +117,13 @@ def build_vocab(sentences, limitVocab):
     vocabulary_inv = {idx: word[0] for idx, word in enumerate(word_counts.most_common(limitVocab))}
     vocabulary = {vocabulary_inv.get(i) : i for i in vocabulary_inv}
     return vocabulary, vocabulary_inv
+
+def build_category_vocab(sentences):
+
+    vocabulary_inv = {idx: word for idx, word in enumerate(sentences)}
+    vocabulary = {vocabulary_inv.get(i) : i for i in vocabulary_inv}
+    return vocabulary, vocabulary_inv
+
 
 
 def batch_iter(data, batch_size, num_epochs, shuffle=True):
@@ -286,16 +314,56 @@ def load_test_data_kor(file,split,vocabulary):
     max_length = max([len(i) for i in x_raw])
 
     x_raw = padding(x_raw, vocabulary, max_length)
-    df.sort_values()
+    # df.sort_values()
     x = zip(np.array(x_raw), rawText)
     y = np.array(y_raw)
 
     return x, y, max_length
 
+def makeCategoryCluster(a):
+    # a = {i for i in a if i != {}}
+    culture = []
+    digital = []
+    economic = []
+    foreign = []
+    politics = []
+    society = []
+    for i in a:
+        # print("asdasd",i)
+        for word in wordList:
+            value= i.get(word)
+            # print("vqwqwv",word)
+            # print(i.get(word))
+            try:
+                value.index(1)
+            except:
+                pass
+            else:
+                if value == None:
+                    pass
+                elif value.index(1) +1 == 1:
+                    culture.append(word)
+                elif value.index(1) +1 == 2:
+                    digital.append(word)
+                elif value.index(1) +1 == 3:
+                    economic.append(word)
+                elif value.index(1) +1 == 4:
+                    foreign.append(word)
+                elif value.index(1) +1 == 5:
+                    politics.append(word)
+                elif value.index(1) +1 == 6:
+                    society.append(word)
+                else:
+                    pass
+    return np.array([culture, digital, economic, foreign, politics, society])
 
 
-def load_data_kor(file,lang,split,limitVocab):
-    # file = "/home/gon/Desktop/NNST-Naver-News-for-Standard-and-Technology-Database-master/nnst/NNST_data.csv"
+def get_label(df, labelq):
+    labelq[df-1] = 1
+    return labelq
+
+def load_data_kor(file, lang, split, limitVocab, tficf):
+    # file = "/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master2/CharCLSTMATTENT/data/kor/train1P.csv"
     pklFile = "/home/gon/Desktop/multi-class-text-classification-cnn-rnn-master2/CharCLSTMATTENT/pkl/"+ lang + "/"+ split + "/"+ file.split("/")[-1].split(".")[0] + "_data_preprocess.pkl"
     if not check_pickle_file(pklFile):
         with open(pklFile,"wb") as f:
@@ -311,16 +379,54 @@ def load_data_kor(file,lang,split,limitVocab):
             x_raw = preprocess_data_by_split_type(df, split)
             y_raw = df["class"].apply(lambda y: label_dict[y]).tolist()
             max_length = max([len(i)for i in x_raw])
-            pickle.dump((x_raw, y_raw, labels2, rawText,max_length),f)
+            pickle.dump((x_raw, y_raw, labels2, rawText,max_length,df),f)
     else:
         with open(pklFile,"rb") as f:
-            x_raw, y_raw, labels2, rawText,max_length = pickle.load(f)
+            x_raw, y_raw, labels2, rawText, max_length,df = pickle.load(f)
 
     vocabulary, vocabulary_inv = build_vocab(x_raw, limitVocab)
     vocabulary["<PAD>"] = len(vocabulary)
     vocabulary_inv[len(vocabulary_inv)] = "<PAD>"
     vocabulary["<UNK>"] = len(vocabulary)
     vocabulary_inv[len(vocabulary_inv)] = "<UNK>"
+
+    categoryEmbeddingMats = 0
+    if tficf:
+        print("make category clustering")
+        # Extract Category Clustering using Tficf
+        global wordList
+        # wordList = Counter(list(itertools.chain(*x_raw)))
+        wordList = vocabulary_inv.values()
+
+        with open("./categoryData.pkl",'wb') as f:
+            df2 = df
+            df2["text"] = x_raw
+            df2["class"] = [list(i).index(1)+1 for i in np.array(y_raw)]
+            pickle.dump(df2,f)
+
+        # pool = Pool(nump)
+        # results = list(tqdm.tqdm(pool.imap(train_cnn_rnn2,_params)))
+        # pool.close()
+
+        q ={}
+        z = []
+        pool = Pool(20)
+
+        a = list(range(0,len(df2.values),100))
+        fr = a[:-1]
+        to = a[1:]
+
+
+
+        frto = list(zip(fr, to))
+
+        s = list(tqdm.tqdm(pool.imap(madeCategoryClusters,frto)))
+        for i in s:
+            z.append(i)
+
+
+        categoryClusters = makeCategoryCluster(z)
+        categoryEmbeddingMats = categoryEmbedding(categoryClusters, 128, "6,9,12")
 
     x_raw = padding(x_raw,vocabulary,max_length)
     # x_raw, max_length = pad_sentences(x_raw)
@@ -330,7 +436,45 @@ def load_data_kor(file,lang,split,limitVocab):
     y = np.array(y_raw)
 
 
-    return x, y, vocabulary, vocabulary_inv, max_length, labels2
+    return x, y, vocabulary, vocabulary_inv, max_length, labels2,categoryEmbeddingMats
+
+
+
+
+
+
+def madeCategoryClusters(frto):
+    fr,to = frto
+    start_vect = time.time()
+    a = {}
+    with open("./categoryData.pkl",'rb')as f:
+        df2 = pickle.load(f)
+
+
+
+    result = {}
+    # cf = calculate_cf(word, df)
+
+    labelq = [0] * 6
+    for _, la, line, row, in df2.values[fr:to]:
+        for word in wordList:
+            if word in line:
+                if result.__contains__(word):
+                    result[word][la-1] += 1
+                else:
+                    result[word] = [0 for _ in range(6)]
+                    result[word][la-1] += 1
+
+                tficf = Counter(wordList).get(word) * np.log2((6 / 1 + np.sum(result[word])))
+                if tficf >= log(6) + 1 and np.sum(result[word]) == 1:
+                    a[word] = result[word]
+            else:
+                pass
+
+
+    # print("training Runtime: %0.2f Minutes" % ((time.time() - start_vect) / 60))
+    return a
+
 
 def padding(r_data,vocab,max_length):
     data = []

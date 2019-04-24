@@ -8,36 +8,34 @@ import data_helper
 import datetime
 import numpy as np
 import tensorflow as tf
-from pandas import Series,DataFrame
+import keras
+from pandas import DataFrame
 from sklearn.model_selection import train_test_split
 from itertools import product
 from multiprocessing import Pool
 from math import log
-import keras
 import tqdm
 
 # CNN
-from cnn import TextCNNRNN
+# from cnn import TextCNNRNN
 
 # RNN
-# from rnn import TextCNNRNN
+from rnn import TextCNNRNN
 
 # CRNN
 # from char_cnn_biLstm2 import TextCNNRNN
-
-
-
 logging.getLogger().setLevel(logging.INFO)
 
 
-tf.flags.DEFINE_string("filename", "cnn_root_Accuracy_2017_jamo_setting_best","")
+tf.flags.DEFINE_string("filename", "cnn_root_Accuracy_2017_nb","")
 tf.flags.DEFINE_string("lang", "kor","")
 tf.flags.DEFINE_string("split", "root","")
 tf.flags.DEFINE_integer("limitVocab", None,"")
-tf.flags.DEFINE_string("trainData",'./data/kor/train.csv',"")
-tf.flags.DEFINE_string("testData",'test.csv',"")
-tf.flags.DEFINE_multi_integer("num_filters",[128],"")
-tf.flags.DEFINE_multi_integer("hidden_unit",[32],"")
+tf.flags.DEFINE_boolean("tficf", False, " ")
+tf.flags.DEFINE_string("trainData",'./data/kor/train10P.csv',"")
+tf.flags.DEFINE_string("testData",'test10P.csv',"")
+tf.flags.DEFINE_multi_integer("num_filters",[8,16,32,64,128,256,512,1024],"")
+tf.flags.DEFINE_multi_integer("hidden_unit",[0],"")
 
 FLAGS = tf.flags.FLAGS
 
@@ -52,7 +50,7 @@ def asd(values):
     sess = tf.Session(config=config)
     set_session(sess)
 
-    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels = data_helper.load_data_kor(FLAGS.trainData, FLAGS.lang, FLAGS.split, FLAGS.limitVocab)
+    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels, categoryEmbeddingMats = data_helper.load_data_kor(FLAGS.trainData, FLAGS.lang, FLAGS.split, FLAGS.limitVocab,FLAGS.tficf)
     x_ = np.array(list(x_))
     x_train, x_dev, y_train, y_dev = train_test_split(x_, y_, test_size=0.1)
     x_train, _ = zip(*np.array(x_train))
@@ -123,7 +121,7 @@ def asd(values):
 
 
 def mlp():
-    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels = data_helper.load_data_kor(FLAGS.trainData, FLAGS.lang, FLAGS.split, FLAGS.limitVocab)
+    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels,categoryEmbeddingMats = data_helper.load_data_kor(FLAGS.trainData, FLAGS.lang, FLAGS.split, FLAGS.limitVocab,FLAGS.tficf)
     x_ = np.array(list(x_))
     x_train, x_dev, y_train, y_dev = train_test_split(x_, y_, test_size=0.1)
     x_train, _ = zip(*np.array(x_train))
@@ -291,7 +289,7 @@ def train_cnn_rnn2(_params):
 
     # x_, y_, vocabulary, vocabulary_inv,df, labels = data_helper.load_data_modified(input_file)
     # x_, y_, vocabulary, vocabulary_inv, labels,max_word_length = data_helper.load_data_modified_char(input_file)
-    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels = data_helper.load_data_kor(FLAGS.trainData,FLAGS.lang,FLAGS.split,FLAGS.limitVocab)
+    x_, y_, vocabulary, vocabulary_inv, max_word_length, labels, categoryEmbeddingMats = data_helper.load_data_kor(FLAGS.trainData,FLAGS.lang,FLAGS.split,FLAGS.limitVocab,FLAGS.tficf)
 
     # x_test, y_test = data_helper.load_test_data_kor(testData,FLAGS.split,vocabulary,vocabulary_inv)
     # x_test, raw_text = zip(*np.array(x_test))
@@ -306,14 +304,18 @@ def train_cnn_rnn2(_params):
 
     print(params)
     # Assign a 300 dimension vector to each word
-    word_embeddings = data_helper.load_embeddings(vocabulary,params['embedding_dim'])
+    word_embeddings = data_helper.load_embeddings(vocabulary,300)
     embedding_mat = [word_embeddings[vocabulary_inv.get(idx)] for idx in vocabulary_inv]
+
+
+
+    # categoryEmbeddingMats = data_helper.categoryEmbedding(categoryClusters,128,"6,9,12")
 
     # Char-Embedding
     # char_embeddings = data_helper.load_char_embeddings(vocabulary)
     # embedding_mat = [char_embeddings[char] for index, char in enumerate(vocabulary_inv) if char in dict1]
 
-    embedding_mat = np.array(embedding_mat, dtype = np.float32)
+    embedding_mat = np.array(embedding_mat, dtype=np.float32)
 
 
     # Split the original dataset into train set and test set
@@ -323,9 +325,9 @@ def train_cnn_rnn2(_params):
 
     x_ = np.array(list(x_))
     # Split the train set into train set and dev set
-    x_train, x_dev, y_train, y_dev = train_test_split(x_, y_, test_size=0.1)
-    x_train, _ = zip(*np.array(x_train))
-    x_dev, _ = zip(*np.array(x_dev))
+    x_train, x_dev, y_train, y_dev = train_test_split(x_, y_, test_size=0.8)
+    x_train, x_train_raw = zip(*np.array(x_train))
+    x_dev, x_dev_raw = zip(*np.array(x_dev))
 
     logging.info('x_train: {}, x_dev: {}'.format(len(x_train), len(x_dev)))
     logging.info('y_train: {}, y_dev: {}'.format(len(y_train), len(y_dev)))
@@ -337,6 +339,7 @@ def train_cnn_rnn2(_params):
 
     cnn_rnn = TextCNNRNN(
         embedding_mat=embedding_mat,
+        embedding_category_mat=categoryEmbeddingMats,
         sequence_length=max_word_length,
         num_classes=y_train.shape[1],
         non_static=params['non_static'],
@@ -345,7 +348,8 @@ def train_cnn_rnn2(_params):
         filter_sizes=params['filter_sizes'].split(","),
         num_filters=params['num_filters'],
         embedding_size=params['embedding_dim'],
-        l2_reg_lambda=params['l2_reg_lambda'])
+        l2_reg_lambda=params['l2_reg_lambda'],
+        tficf=FLAGS.tficf)
     session_conf = tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)
     session_conf.gpu_options.allow_growth = True
 
@@ -387,6 +391,7 @@ def train_cnn_rnn2(_params):
                 cnn_rnn.batch_size: len(x_batch),
                 cnn_rnn.pad: np.zeros([len(x_batch), 1, params['embedding_dim'], 1]),
                 cnn_rnn.real_len: real_len(x_batch),
+                # cnn_rnn.idk : categoryEmbeddingMats
             }
             # print("{} : {}".format("pad.shape", np.shape(x_batch)))
             # print("{} : {}".format("asdwqffqw.shape", cnn_rnn.scores))
@@ -395,8 +400,13 @@ def train_cnn_rnn2(_params):
             # print("{} : {}".format("pad.shape", len(x_batch)))
             # print("{} : {}".format("pad.shape", np.shape(np.zeros([len(x_batch), 1, params['embedding_dim'], 1]))))
             # print("{} : {}".format("pad.shape", np.shape(real_len(x_batch))))
-            _, step, loss, accuracy, summaries = sess.run([train_op, global_step, cnn_rnn.loss, cnn_rnn.accuracy, train_summary_op], feed_dict)
-
+            _, step, loss, accuracy, summaries, num_correct= sess.run([train_op, global_step, cnn_rnn.loss, cnn_rnn.accuracy, train_summary_op, cnn_rnn.num_correct], feed_dict)
+            # print(score.shape)
+            # print(num_correct.shape)
+            # print(correct.shape)
+            # print(accuracy.shape)
+            # print(correct_predict.shape)
+            # print(np.shape(emb))
             if step % params['display_every'] == 0:
                 time_str = datetime.datetime.now().isoformat()
                 print("{}: {} step {}, loss {:g}, acc {:g}".format(time_str,epoch, step, loss, accuracy))
@@ -431,17 +441,22 @@ def train_cnn_rnn2(_params):
         # Train the model with x_train and y_train
 
         def training(x_train, y_train,num_class):
-            n_batch = int(math.ceil(len(x_train) / params["batch_size"]))
+            n_batch = int(len(x_train) / params["batch_size"])
             m = 0
             for idx in range(n_batch):
                 y_train_batch = np.zeros([params["batch_size"], num_class])
                 x_train_batch = np.ndarray([params["batch_size"], max_word_length])
                 for batch_num in range(params["batch_size"]):
+                    # print(batch_num)
+                    # print(m)
+                    # print("x_train_batch_before : ",x_train_batch[batch_num])
                     y_train_batch[batch_num] = y_train[m]
                     x_train_batch[batch_num] = x_train[m]
+                    # print("x_train_batch_after : ", x_train_batch[batch_num])
                     m += 1
                     if m >= len(x_train):
                         m = 0
+                # print(x_train_batch[1])
                 step = train_step(x_train_batch, y_train_batch, writer=train_summary_writer)
 
             return step
@@ -450,7 +465,7 @@ def train_cnn_rnn2(_params):
             total_dev_correct = 0
 
             A_s = 0
-            n_batch = int(math.ceil(len(x_dev) / params["batch_size"]))
+            n_batch = int(len(x_dev) / params["batch_size"])
 
             q = 0
             for idx in range(n_batch):
@@ -487,7 +502,7 @@ def train_cnn_rnn2(_params):
                 print('Best accuracy {} at step {}'.format(best_accuracy, best_at_step))
 
             if current_step >= 500:
-                if accuracy - np.mean(accuracy_list[int(round(len(accuracy_list) / 2)):]) <= 0.001:
+                if accuracy - np.mean(accuracy_list[int(round(len(accuracy_list) / 2)):]) <= 0.01:
                     print("Early Stopping")
                     break
 
@@ -519,6 +534,7 @@ def train_cnn_rnn2(_params):
     print("\n")
     del cnn_rnn
     return params,accuracy,checkpoint_dir, duration
+
 
 # def train_cnn_rnn(input_file):
 #     accuracy_list=[]
@@ -772,15 +788,12 @@ def train_cnn_rnn2(_params):
 #     print("training Runtime: %0.2f Minutes" % ((time.time() - start_vect) / 60))
 #
 #     return best_accuracy
-
 def getDatafilePath(root_path):
     for _, dirs,_ in os.walk(root_path):
 
         if dirs != []:
             print([root_path +dir + "/NNST_data.csv" for dir in dirs if dir != []])
             return [root_path +dir + "/NNST_data.csv" for dir in dirs if dir != []]
-
-
 
 
 def process_make_dataframe(indexes):
@@ -805,12 +818,13 @@ def multiprocess_train_params(nump):
     params = json.loads(open(training_config).read())
     _params = [(v, params[v]) for v in params]
     _params = list(product([_params], FLAGS.hidden_unit,FLAGS.num_filters))
-    results = train_cnn_rnn2(_params[0])
-    # pool = Pool(nump)
-    # results = list(tqdm.tqdm(pool.imap(train_cnn_rnn2,_params)))
-    # pool.close()
+    # results = train_cnn_rnn2(_params[0])
+    pool = Pool(nump)
+    results = list(tqdm.tqdm(pool.imap(train_cnn_rnn2,_params)))
+
 
     return results
+
 
 if __name__ == '__main__':
     # python3 train.py ./data/train.csv.zip ./training_config.json
@@ -819,10 +833,10 @@ if __name__ == '__main__':
     # for i in [4,8,16,32,64,128,256,512,1024]:
     #     asd(i)
 
-    results = multiprocess_train_params(1)
-    record_train_info(results)
-    # for result in results:
-    #     record_train_info(result)
+    results = multiprocess_train_params(3)
+    # record_train_info(results)
+    for result in results:
+        record_train_info(result)
 
 
 
